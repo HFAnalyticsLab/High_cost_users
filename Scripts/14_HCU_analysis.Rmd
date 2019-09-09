@@ -1,0 +1,333 @@
+---
+title: "Top 5% - High Cost Users"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: lumen
+    toc: yes
+  
+---
+
+## Background
+- Cost data is taken from CSV file produced in SAS
+- This script calculates descriptive statistics
+
+## Outline
+1. Set up
+2. Import data from SAS & Cleaning
+3. Inclusions & Exclusions
+4. Analyse:
+    + Costs
+    + Utilisation
+    + Demographics
+    + Morbidity
+
+## Set up
+Read in and load packages, set year variable
+
+```{r}
+
+knitr::opts_chunk$set(fig.width = 12, fig.height = 8, fig.path = 'Figs/', echo = TRUE, warning = FALSE, message = FALSE)
+
+library(haven)
+library(here)
+library(tidyverse)
+library(naniar)
+
+here::here()
+
+year <- 2014
+
+```
+
+
+## Importing SAS data & Cleaning
+Import data from SAS, only include relevant columns
+NOTE: change file name for appropriate year
+```{r}
+
+HCU_SAS <- read_sas(here::here("Data","finalcosts_1415.sas7bdat"))
+
+HCU <- select(HCU_SAS,c(patid, startage, imd, yeardied, yeartrans, died, spells, elects, emergs, others, elcost, emcost, othcost,apctotcost, los, avlos, prevadm, prevadmchron, prevadmacut, prevcost, prevcostchron, prevcostacut, aeatts, aetotcost, opatts, optotcost, pcontacts, ptotcost, therapyrecs, bnfchaps, drugs, drugtotcost, mental, physical, total, finalcost, sex, age_cat, fcperc, top5))
+
+HCU <- HCU %>% 
+  mutate(age_cat = factor(age_cat)) %>% 
+  mutate(age_cat = fct_relevel(age_cat, "5-9", after = 1)) %>% 
+  mutate(age_cat = fct_relevel(age_cat, "100+", after = 20)) %>%
+  mutate(sex = factor(sex)) %>% 
+  mutate(top5 = factor(top5)) %>% 
+  mutate(mm_total = ifelse(total > 11, "12+", total)) %>% 
+  mutate(mm_total = fct_relevel(mm_total, "10", after = 12)) %>%
+  mutate(mm_total = fct_relevel(mm_total, "11", after = 12)) %>%
+  mutate(mm_total = fct_relevel(mm_total, "12+", after = 12))
+  
+HCU_MM <- select(HCU_SAS, c(patid, top5, ALC, ANO, ANX, DEM, DEP, EPI, LEA, MIG, OPS, PRK, SCZ, AST, ATR, BLI, BRO, CAN, CHD, CKD, CLD, CON, COP, DIB, DIV, HEF, HEL, HYP, IBD, IBS, MSC, PNC, PRO, PSO, PVD, RHE, SIN, STR, THY, mental, physical, total, yeardied, yeartrans))
+
+HCU_MM <-  HCU_MM %>% 
+  mutate(top5 = factor(top5))
+
+```
+
+## Data Cleaning
+1) Exclude deaths during the year
+2) Exclude patients who transferred out in or before 2014
+
+```{r}
+
+# Before exclusions
+nrow(HCU)
+
+HCU_clean <- HCU %>% 
+  filter(yeardied >= year) %>% 
+  filter(yeartrans > year)
+
+HCU_MM_clean <- HCU_MM %>% 
+  filter(yeardied >= year) %>% 
+  filter(yeartrans > year)
+
+#After exclusions
+nrow(HCU_clean)
+
+```
+
+
+## Analyse Data
+
+### Number of patients
+
+```{r}
+
+sample <- HCU_clean %>% 
+  count(top5)
+sample
+
+```
+
+
+### Total Costs
+```{r}
+
+HCU_group <- HCU_clean %>% 
+  group_by(top5)
+
+#Total Costs
+total_costs <- summarise(HCU_group, total_cost = round(sum(finalcost)), ip_cost = round(sum(apctotcost)), ae_cost = round(sum(aetotcost)), op_cost = round(sum(optotcost)), primary_cost = round(sum(ptotcost)), drug_cost = round(sum(drugtotcost)))
+
+total_costs
+
+#Transform data for graph
+total_costs_gg <-  total_costs %>% 
+  gather("cost_cat","costs",-c(top5))
+
+#Graph
+ggplot(data = total_costs_gg, aes(x = cost_cat, y = costs, fill = factor(top5))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(limits = c("total_cost", "ip_cost", "op_cost", "ae_cost", "primary_cost", "drug_cost"), labels = c("total_cost" = "Total cost", "ip_cost" = "Inpatient care", "op_cost" = "Outpatient care", "ae_cost" = "ED care", "primary_cost" = "Primary care", "drug_cost" = "Drug Therapy")) +
+  scale_fill_discrete(name = "", labels = c("Bottom 95%", "Top 5%")) +
+  ylab("Total summed cost (£)") +
+  xlab("") +
+  scale_y_continuous(labels = scales::comma) 
+
+```
+
+### Average costs per patient
+```{r}
+
+#Average costs pp
+ave_costs <- summarise(HCU_group, mtotal_cost = mean(finalcost), mip_cost = mean(apctotcost), mae_cost = mean(aetotcost), mop_cost = mean(optotcost), mprimary_cost = mean(ptotcost), mdrug_cost = mean(drugtotcost))
+
+ave_costs
+
+#Transform data for graph
+ave_costs_gg <-  ave_costs %>% 
+  gather("cost_cat","mean_costs",-c(top5))
+
+#Graph
+ggplot(data = ave_costs_gg, aes(x = cost_cat, y = mean_costs, fill = factor(top5))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(limits = c("mtotal_cost", "mip_cost", "mop_cost", "mae_cost", "mprimary_cost", "mdrug_cost"), labels = c("mtotal_cost" = "Total cost", "mip_cost" = "Inpatient care", "mop_cost" = "Outpatient care", "mae_cost" = "ED care", "mprimary_cost" = "Primary care", "mdrug_cost" = "Drug Therapy")) +
+  scale_fill_discrete(name = "", labels = c("Bottom 95%", "Top 5%")) +
+  ylab("Mean cost per patient (£)") +
+  xlab("") +
+  geom_text(aes(label = round(mean_costs)), position = position_dodge(width = 0.9), vjust = -0.5) +
+  scale_y_continuous(labels = scales::comma) 
+
+```
+
+### Utilisation - Health care contacts per patient
+
+```{r}
+
+#Average contacts per patient
+contacts <- summarise(HCU_group, mean_primary = mean(pcontacts), mean_out = mean(opatts), mean_inpatient = mean(spells), mean_ed = mean(aeatts))
+
+contacts
+
+#Transform data for graph
+contacts_gg <-  contacts %>% 
+  gather("cost_cat","contacts",-c(top5))
+
+#Graph
+ggplot(data = contacts_gg, aes(x = cost_cat, y = contacts, fill = factor(top5))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(limits = c("mean_primary", "mean_out", "mean_inpatient", "mean_ed"), labels = c("mean_primary" = "Primary care contacts", "mean_out" = "Outpatient attendances", "mean_inpatient" = "Inpatient admissions", "mean_ed" = "ED attendances")) +
+  scale_fill_discrete(name = "", labels = c("Bottom 95%", "Top 5%")) +
+  ylab("Mean utilisation") +
+  xlab("") +
+  geom_text(aes(label = round(contacts,2)), position = position_dodge(width = 0.9), vjust = -0.5) 
+
+```
+
+### Utilisation - Drug utilislation
+
+```{r}
+
+#Average drug utilisation per patient
+drugs <- summarise(HCU_group, mean_records = mean(therapyrecs), mean_drugs = mean(drugs), mean_bnf = mean(bnfchaps))
+
+drugs
+
+#Transform data for graph
+drugs_gg <-  drugs %>% 
+  gather("drug_ut","d_counts",-c(top5))
+
+#Graph
+ggplot(data = drugs_gg, aes(x = drug_ut, y = d_counts, fill = factor(top5))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(limits = c("mean_records", "mean_drugs", "mean_bnf"), labels = c("mean_records" = "Prescription recrods", "mean_drugs" = "Drugs prescribed", "mean_bnf" = "BNF chapters")) +
+  scale_fill_discrete(name = "", labels = c("Bottom 95%", "Top 5%")) +
+  ylab("Mean counts") +
+  xlab("") +
+  geom_text(aes(label = round(d_counts,2)), position = position_dodge(width = 0.9), vjust = -0.5) 
+
+```
+
+### Demographics
+
+Age distribution across groups
+
+```{r}
+
+age <- HCU_clean %>% 
+  count(top5, age_cat, name = "size") %>% 
+  group_by(top5) %>% 
+  mutate(a_percent = size / sum(size) * 100)
+
+age
+
+#Graph
+ggplot(data = age, aes(x = age_cat, y = a_percent, group = top5, colour = top5)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  ylab("Proportion of group (%)") +
+  xlab("Age band") +
+  expand_limits(y = 0) +
+  scale_colour_discrete(name = "", labels = c("Bottom 95%", "Top 5%"))
+  
+```
+
+Age and sex distribution of top 5%
+
+```{r}
+
+age_sex <- HCU_clean %>% 
+  count(top5, age_cat, sex, name = "size") %>% 
+  group_by(sex, age_cat) %>% 
+  mutate(percent = size / sum(size) * 100) %>% 
+  filter(top5 == "top 5%")
+
+age_sex
+
+#Graph
+ggplot(data = age_sex, aes(x = age_cat, y = percent, group = sex, colour = sex)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  ylab("Proportion of group (%)") +
+  xlab("Age band") +
+  expand_limits(y = 0) +
+  scale_colour_discrete(name = "", labels = c("Female", "Male"))
+
+```
+
+Deprivation distribution of top 5%
+
+```{r}
+
+imd <- HCU_clean %>% 
+  count(imd, top5, name = "dep_size") %>% 
+  group_by(imd) %>% 
+  mutate(percent = dep_size / sum(dep_size) * 100) %>% 
+  filter(top5 == "top 5%") %>% 
+  filter(imd != "NA")
+
+
+imd
+
+#Graph
+ggplot(data = imd, aes(x = imd, y = percent, colour = "#F8766D")) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +
+  ylab("Proportion of patients in high cost group (%)") +
+  scale_x_continuous(name = "IMD Decile", breaks = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)) +
+  expand_limits(y = 0) +
+  theme(legend.position = "none", panel.grid.minor.x = element_blank())
+
+```
+
+### Morbidity
+
+Number of pre-existing conditions
+
+```{r}
+
+mm <- HCU_clean %>% 
+  count(top5, mm_total, name = "mm_count") %>% 
+  group_by(top5) %>% 
+  mutate(percent = mm_count / sum(mm_count) * 100)
+
+mm
+
+#Graph
+ggplot(data = mm, aes(x = mm_total, y = percent, group = top5, colour = top5)) +
+  geom_line(size = 1) +
+  geom_point(size = 3) +    
+  ylab("Proportion of group (%)") +
+  xlab("Total number of conditions in Cambridge Multimorbidity Score") +
+  expand_limits(y = 0) +
+  scale_colour_discrete(name = "", labels = c("Bottom 95%", "Top 5%"))
+
+```
+
+Prevalence of conditions
+
+```{r}
+
+HCU_MM_group <- HCU_MM_clean %>% 
+  group_by(top5)
+
+HCU_MM_sum <- summarise(HCU_MM_group, cyp_count = n(), ALC = sum(ALC), ANO = sum(ANO), ANX = sum(ANX), DEM = sum(DEM), DEP = sum(DEP), EPI = sum(EPI), LEA = sum(LEA), MIG = sum(MIG), OPS = sum(OPS), PRK = sum(PRK), SCZ  = sum(SCZ), AST = sum(AST), ATR = sum(ATR), BLI = sum(BLI), BRO = sum(BRO), CAN = sum(CAN), CHD = sum(CHD), CKD = sum(CKD), CLD = sum(CLD), CON = sum(CON), COP = sum(COP), DIB = sum(DIB), DIV = sum(DIV), HEF = sum(HEF), HEL = sum(HEL), HYP = sum(HYP), IBD = sum(IBD), IBS = sum(IBS), MSC = sum(MSC), PNC = sum(PNC), PRO = sum(PRO), PSO = sum(PSO), PVD = sum(PVD), RHE = sum(RHE), SIN = sum(SIN), STR = sum(STR), THY = sum(THY))
+
+HCU_MM_sum_t5 <- HCU_MM_sum %>% 
+  filter(top5 == "top 5%") %>% 
+  gather("conditions", "t5_count", -c(top5)) %>%   
+  select(-c(top5)) %>% 
+  replace_with_na(replace = list(t5_count = c(1, 2, 3, 4, 5, 6, 7, 8, 9)))
+
+HCU_MM_sum_b95 <- HCU_MM_sum %>% 
+  filter(top5 == "bottom 95%") %>% 
+  gather("conditions", "b95_count", -c(top5)) %>% 
+  select(-c(top5)) %>% 
+  replace_with_na(replace = list(b95_count = c(1, 2, 3, 4, 5, 6, 7, 8, 9)))
+
+HCU_MM_sum_final <- merge(HCU_MM_sum_t5, HCU_MM_sum_b95, by = "conditions")
+
+HCU_MM_sum_final
+
+
+```
+
+
+
+
+
