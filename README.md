@@ -76,7 +76,7 @@ Scripts should be run in order (as numbered). The respective HRG grouper needs t
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE.md).
+This project is licensed under the [MIT License](https://github.com/HFAnalyticsLab/High_cost_users/blob/master/LICENSE).
 
 ## Acknowledgments
 
